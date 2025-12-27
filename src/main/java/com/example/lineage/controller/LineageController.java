@@ -23,8 +23,8 @@ public class LineageController {
 
     @GetMapping("/lineage/ingest")
     public String ingest() {
-        persistenceService.persistWithRelationships(simService.loadRawEntities());
-        return "Ingested nodes and CALLS relationships";
+        persistenceService.persistAll(simService.loadRawEntities());
+        return "Ingested application + data + messaging lineage";
     }
 
     @GetMapping("/lineage/blast-radius/{nodeId}")

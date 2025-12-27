@@ -5,6 +5,15 @@
     "calls": [
       "payment-service",
       "customer-service"
+    ],
+    "readsFrom": [
+      "customer-db"
+    ],
+    "writesTo": [
+      "orders-db"
+    ],
+    "publishesTo": [
+      "orders-topic"
     ]
   },
   {
@@ -12,12 +21,15 @@
     "name": "payment-service",
     "calls": [
       "bank-api"
+    ],
+    "writesTo": [
+      "payments-db"
     ]
   },
   {
     "id": "SERVICE-3",
     "name": "customer-service",
-    "calls": [
+    "readsFrom": [
       "customer-db"
     ]
   },
@@ -26,6 +38,12 @@
     "name": "inventory-service",
     "calls": [
       "order-service"
+    ],
+    "consumesFrom": [
+      "orders-topic"
+    ],
+    "writesTo": [
+      "inventory-db"
     ]
   },
   {
@@ -33,6 +51,9 @@
     "name": "shipping-service",
     "calls": [
       "inventory-service"
+    ],
+    "consumesFrom": [
+      "orders-topic"
     ]
   }
 ]
