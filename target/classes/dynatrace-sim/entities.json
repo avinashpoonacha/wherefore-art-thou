@@ -1,0 +1,38 @@
+[
+  {
+    "id": "SERVICE-1",
+    "name": "order-service",
+    "calls": [
+      "payment-service",
+      "customer-service"
+    ]
+  },
+  {
+    "id": "SERVICE-2",
+    "name": "payment-service",
+    "calls": [
+      "bank-api"
+    ]
+  },
+  {
+    "id": "SERVICE-3",
+    "name": "customer-service",
+    "calls": [
+      "customer-db"
+    ]
+  },
+  {
+    "id": "SERVICE-4",
+    "name": "inventory-service",
+    "calls": [
+      "order-service"
+    ]
+  },
+  {
+    "id": "SERVICE-5",
+    "name": "shipping-service",
+    "calls": [
+      "inventory-service"
+    ]
+  }
+]
