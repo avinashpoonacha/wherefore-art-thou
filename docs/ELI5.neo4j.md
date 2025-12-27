@@ -1,67 +1,69 @@
 ELI5: What is Neo4j?
 
-Neo4j is a graph database. Instead of storing data as rows and tables (like a relational database), Neo4j stores data as nodes and relationships. Think of it like a whiteboard where each thing is a circle (a node) and arrows between circles are relationships. This makes it very fast and natural to model connected data — for example, services that call other services.
+Neo4j is a graph database — instead of storing data in tables like a relational database, it stores data as nodes (things) and relationships (connections between things). This makes it great for modeling networks: social graphs, dependencies, call graphs, and more.
 
-Key concepts (very simple):
-- Node: an entity (e.g., an Application node representing a service).
-- Relationship: a directed connection between two nodes (e.g., A CALLS B).
-- Property: key/value attached to nodes or relationships (e.g., nodeId: "service-1").
-- Cypher: Neo4j's query language (readable, pattern-based). Example: `MATCH (a)-[:CALLS]->(b) RETURN a, b`.
+Key concepts
+- Node: an entity with key-value properties and optional labels (like types).
+- Relationship: a directed connection between two nodes with a type and optional properties.
+- Label: a category for nodes (e.g., `Application`).
+- Cypher: Neo4j's query language (similar to SQL but designed for graphs).
 
-Why Neo4j here?
-This project models application call relationships as a graph so you can easily query impact (blast radius) and recovery ordering using graph traversal (variable-length paths).
+How this project models data
+- Each service/application is an `Application` node with properties `nodeId` and `name`.
+- Calls between services are represented by `CALLS` relationships. The relationship has a `critical` boolean property (default true).
+- The sample data is in `src/main/resources/dynatrace-sim/entities.json`.
 
-Deep dive: the Cypher queries used in this project
+Cypher queries used in this project
 
-There are two simple queries used in `LineageQueryService`.
+1) Blast radius (impact analysis)
 
-1) Blast radius
+Query used in `LineageQueryService.blastRadius`:
 
-Cypher used:
-
-```
 MATCH (n {nodeId:$id})<-[:CALLS*]-(impacted) RETURN impacted.nodeId AS nodeId
-```
 
-Explanation (line-by-line):
-- `MATCH (n {nodeId:$id})` — find a node whose `nodeId` property matches the parameter `$id` (the service you care about).
-- `<-[:CALLS*]-(impacted)` — traverse any number (1..N) of incoming `CALLS` relationships to find nodes that call `n` (the direction is `caller -> callee`, so `<-[:CALLS*]-` walks from callers toward the callee). The `*` means "variable-length path": find direct callers, callers-of-callers, etc.
-- `impacted` names the nodes found by the traversal — these are the services that (directly or indirectly) depend on `n` and therefore would be impacted if `n` failed.
-- `RETURN impacted.nodeId AS nodeId` — return the `nodeId` property for each impacted node.
+Explanation (step-by-step):
+- MATCH (n {nodeId:$id}): find the node whose `nodeId` equals the supplied parameter `id`.
+- <-[:CALLS*]-(impacted): follow incoming `CALLS` relationships of any length (the `*` quantifier). The arrow `<-` means we traverse relationships pointing to `n`, so we find nodes that call ... -> n. In other words, nodes that depend on `n`.
+- This finds all callers (direct and indirect) that would be impacted if `n` fails — the "blast radius".
+- RETURN impacted.nodeId AS nodeId: return the `nodeId` for each impacted node.
 
-Notes & gotchas:
-- This returns every impacted node found along any length path. If you want to limit depth, use `[:CALLS*1..3]`.
-- The query as-written may return duplicates if there are multiple paths to the same impacted node; you can use `RETURN DISTINCT impacted.nodeId` to dedupe.
+Notes and variants:
+- To limit to direct callers only, remove the `*` (MATCH (n {nodeId:$id})<-[:CALLS]-(impacted)).
+- To include the distance (how many hops away an impacted node is), use a path variable and length functions, e.g.:
+  MATCH p=(impacted)-[:CALLS*1..]->(n {nodeId:$id})
+  RETURN impacted.nodeId AS nodeId, length(p) AS hops
+- To respect `critical=false` relationships, add a WHERE clause filtering relationship property using pattern comprehension or UNWIND + relationships(p).
 
 2) Recovery order
 
-Cypher used:
+Query used in `LineageQueryService.recoveryOrder`:
 
-```
 MATCH p=(a:Application)-[:CALLS*]->(d) RETURN DISTINCT d.nodeId AS nodeId
-```
 
 Explanation:
-- `MATCH p=(a:Application)-[:CALLS*]->(d)` — find any path starting at an `Application` node and following outgoing `CALLS` relationships (callers -> callees) to reach node `d`.
-- `RETURN DISTINCT d.nodeId AS nodeId` — return distinct destination node IDs. In the app this acts as a basic way to enumerate downstream dependencies; however this simple form doesn't compute a strict topological recovery ordering. For a true recovery plan you'd typically run a topological sort on the dependency DAG.
+- MATCH p=(a:Application)-[:CALLS*]->(d): find any path starting at an `Application` node and following outgoing `CALLS` relationships of any length to destination nodes `d`.
+- RETURN DISTINCT d.nodeId AS nodeId: return the distinct destination nodeIds. The intention here is to list nodes that are dependencies (downstream targets), but note the query as written returns the set of nodes that are at the end of some CALLS path — it doesn't explicitly order a recovery sequence.
 
-Implementation notes in the Java service
+Notes and improvements for a realistic "recovery order":
+- A true recovery order should consider dependencies and produce a topological sort (start with nodes with no outgoing CALLS or nodes that nothing depends on first). Cypher can approximate this but often it's simpler to load the graph and perform a topological sort in application code.
+- Example to return nodes with their in-degree (how many callers):
+  MATCH (n:Application)
+  OPTIONAL MATCH (x)-[:CALLS]->(n)
+  RETURN n.nodeId AS nodeId, count(x) AS callers
+  ORDER BY callers DESC
 
-- The Java code uses `Neo4jClient#query(...).bind(...).to(...).fetch().all()` to execute parameterized Cypher and retrieve all rows. The `fetch().all()` method returns a Collection<Map<String,Object>> where each map represents a row with column names as keys.
-- The service methods return `List<Map<String,Object>>`. To satisfy that return type the code wraps the Collection in `new ArrayList<>(...)`.
+- If you want the reverse (start with least dependent), order by callers ASC.
 
-Performance tips
+How the Java mapping maps to Neo4j
+- `ApplicationNode` class is annotated with `@Node("Application")`, so instances become nodes with label `Application`.
+- `CallsRelationship` is a `@RelationshipProperties` class; the `@TargetNode` points to the called `ApplicationNode` and stores `critical` as a relationship property.
+- When `DynatraceSimService` persists nodes and calls, it constructs `ApplicationNode` objects and adds `CallsRelationship` entries via `addCall(...)`.
 
-- Add indexes for frequently matched properties (e.g., `nodeId`) to speed up `MATCH (n {nodeId:$id})` lookups.
-- Be careful with `*` (variable-length) traversals on very large graphs — consider depth limits or using `shortestPath()` where appropriate.
-
-How to experiment interactively
-
-- Start Neo4j and open the browser on http://localhost:7474.
-- Paste the Cypher queries above, replacing parameters (e.g., `$id`) with concrete values.
+Security and performance notes
+- For large graphs, avoid MATCH with unbounded variable-length patterns without limits; they can be expensive. Prefer bounded ranges, filtering, and pagination.
+- Use indexes on frequently queried properties (e.g., `nodeId`). With Neo4j, create an index: `CREATE INDEX FOR (n:Application) ON (n.nodeId)`.
 
 Further reading
-- Neo4j Cypher documentation: https://neo4j.com/docs/cypher-manual/current/
-- Neo4j concepts: https://neo4j.com/developer/graph-database/
-
+- Neo4j Cypher ref: https://neo4j.com/docs/cypher-refcard/current/
+- Spring Data Neo4j: https://spring.io/projects/spring-data-neo4j
 
