@@ -1,4 +1,7 @@
 com/example/lineage/service/LineageQueryService.class
+com/example/lineage/ingest/DynatraceSimLineageSource.class
+com/example/lineage/ingest/LineageSource.class
+com/example/lineage/ingest/LineageAggregatorService.class
 com/example/lineage/controller/LineageController.class
 com/example/lineage/model/DataAssetNode.class
 com/example/lineage/model/CallsRelationship.class
@@ -9,5 +12,6 @@ com/example/lineage/LineageDemoApplication.class
 com/example/lineage/model/ApplicationNode.class
 com/example/lineage/service/LineagePersistenceService.class
 com/example/lineage/repository/MessageQueueRepository.class
+com/example/lineage/ingest/ManualLineageSource.class
 com/example/lineage/model/LineageNode.class
 com/example/lineage/model/MessageQueueNode.class

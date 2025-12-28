@@ -1,6 +1,7 @@
 
 package com.example.lineage.controller;
 
+import com.example.lineage.ingest.LineageAggregatorService;
 import com.example.lineage.service.*;
 import org.springframework.web.bind.annotation.*;
 
@@ -9,21 +10,19 @@ import java.util.*;
 @RestController
 public class LineageController {
 
-    private final DynatraceSimService simService;
-    private final LineagePersistenceService persistenceService;
+  private final LineageAggregatorService aggregatorService;
+
     private final LineageQueryService queryService;
 
-    public LineageController(DynatraceSimService simService,
-                             LineagePersistenceService persistenceService,
+    public LineageController(LineageAggregatorService aggregatorService,
                              LineageQueryService queryService) {
-        this.simService = simService;
-        this.persistenceService = persistenceService;
+        this.aggregatorService = aggregatorService;
         this.queryService = queryService;
     }
 
     @GetMapping("/lineage/ingest")
     public String ingest() {
-        persistenceService.persistAll(simService.loadRawEntities());
+        aggregatorService.aggregate();
         return "Ingested application + data + messaging lineage";
     }
 
